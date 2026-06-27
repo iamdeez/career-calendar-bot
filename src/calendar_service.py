@@ -72,6 +72,22 @@ def add_event(title: str, date: str, description: str = "", calendar_id: str = "
     return event
 
 
+def get_events_range(time_min: str, time_max: str, calendar_id: str = "primary") -> list[dict]:
+    service = get_calendar_service()
+    result = (
+        service.events()
+        .list(
+            calendarId=calendar_id,
+            timeMin=time_min,
+            timeMax=time_max,
+            singleEvents=True,
+            orderBy="startTime",
+        )
+        .execute()
+    )
+    return result.get("items", [])
+
+
 def list_events(year: int, month: int, calendar_id: str = "primary") -> list[dict]:
     service = get_calendar_service()
 

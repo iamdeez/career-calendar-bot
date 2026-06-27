@@ -6,7 +6,8 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 from . import calendar_service as cal
-from .cert_data import find_cert, get_category_emoji, CATEGORIES
+from .cert_data import find_cert, get_category_emoji, CATEGORIES, CERTIFICATIONS
+from .exam_tracker import create_exam_events, get_active_exams, MILESTONE_ICONS
 
 load_dotenv()
 
@@ -184,6 +185,84 @@ async def upcoming_cmd(interaction: discord.Interaction, 일수: int = 7):
             embed.add_field(
                 name=event.get("summary", "(제목 없음)"),
                 value=f"{date_str}  `{dday_str}`",
+                inline=False,
+            )
+        await interaction.followup.send(embed=embed)
+    except Exception as e:
+        await interaction.followup.send(f"❌ 오류: {e}", ephemeral=True)
+
+
+@tree.command(name="시험등록", description="접수한 시험 일정을 캘린더에 등록합니다")
+@app_commands.describe(
+    자격증="자격증 이름",
+    회차="회차 및 단계 (예: 1회 필기, 2회 실기)",
+    시험일="시험 날짜 (예: 2026-04-05)",
+    접수마감="접수 마감일 (선택)",
+    결과발표="결과 발표일 (선택)",
+)
+@app_commands.choices(자격증=[
+    app_commands.Choice(name=k, value=k) for k in CERTIFICATIONS
+])
+async def register_exam_cmd(
+    interaction: discord.Interaction,
+    자격증: str,
+    회차: str,
+    시험일: str,
+    접수마감: str = "",
+    결과발표: str = "",
+):
+    await interaction.response.defer()
+    try:
+        events = create_exam_events(자격증, 회차, 시험일, 접수마감, 결과발표, CALENDAR_ID)
+
+        lines = []
+        if 접수마감:
+            lines.append(f"📋 접수마감: {접수마감}")
+        lines.append(f"📝 시험일: {시험일}")
+        if 결과발표:
+            lines.append(f"🏆 결과발표: {결과발표}")
+
+        embed = discord.Embed(title="✅ 시험 일정 등록 완료", color=discord.Color.green())
+        embed.add_field(name="자격증", value=f"📜 {자격증}", inline=True)
+        embed.add_field(name="회차", value=회차, inline=True)
+        embed.add_field(name="등록된 일정", value="\n".join(lines), inline=False)
+        embed.set_footer(text=f"캘린더에 {len(events)}개 이벤트가 추가되었습니다.")
+        await interaction.followup.send(embed=embed)
+    except Exception as e:
+        await interaction.followup.send(f"❌ 오류: {e}", ephemeral=True)
+
+
+@tree.command(name="진행중시험", description="현재 접수하거나 준비 중인 시험 현황을 확인합니다")
+async def active_exams_cmd(interaction: discord.Interaction):
+    await interaction.response.defer()
+    try:
+        groups = get_active_exams(CALENDAR_ID)
+
+        if not groups:
+            await interaction.followup.send(
+                "📭 진행 중인 시험이 없습니다.\n`/시험등록` 으로 시험 일정을 추가하세요."
+            )
+            return
+
+        embed = discord.Embed(
+            title=f"🗂 진행 중인 시험 ({len(groups)}개)",
+            color=discord.Color.blue(),
+        )
+        for group in groups.values():
+            lines = []
+            for m in sorted(group["milestones"], key=lambda x: x["date"]):
+                dday = m["dday"]
+                if dday > 0:
+                    dday_str = f"D-{dday}"
+                elif dday == 0:
+                    dday_str = "🔥 D-Day!"
+                else:
+                    dday_str = f"✅ D+{abs(dday)}"
+                icon = MILESTONE_ICONS.get(m["milestone"], "📌")
+                lines.append(f"{icon} {m['milestone']}: {m['date']}  `{dday_str}`")
+            embed.add_field(
+                name=f"📜 {group['cert']} {group['session']}",
+                value="\n".join(lines),
                 inline=False,
             )
         await interaction.followup.send(embed=embed)
